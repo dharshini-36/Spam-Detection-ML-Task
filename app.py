@@ -3,15 +3,19 @@ import pandas as pd
 import numpy as np
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso, LogisticRegression
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
 
+# -------------------------------
 # Title
-st.title("📩 SMS Spam Detection using Lasso Regression")
+# -------------------------------
+st.title("📩 SMS Spam Detection using Lasso + Logistic Regression")
 
-# Load dataset
+# -------------------------------
+# Load Dataset
+# -------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("spam.csv", encoding='latin-1')
@@ -21,81 +25,140 @@ def load_data():
 
 df = load_data()
 
-# Preview dataset
+# -------------------------------
+# Dataset Preview
+# -------------------------------
 st.subheader("🔍 Dataset Preview")
 st.write(df.head())
 
-# Statistical Analysis
+# -------------------------------
+# Statistical Summary
+# -------------------------------
 st.subheader("📊 Statistical Summary")
 st.write(df.describe())
 
+# -------------------------------
 # Missing Values
+# -------------------------------
 st.subheader("❗ Missing Values")
 st.write(df.isnull().sum())
 
-# Encode labels
+# -------------------------------
+# Encode Labels
+# -------------------------------
 le = LabelEncoder()
 df['label'] = le.fit_transform(df['label'])  # ham=0, spam=1
 
-# TF-IDF
+# -------------------------------
+# TF-IDF Vectorization
+# -------------------------------
 vectorizer = TfidfVectorizer(stop_words='english')
 X = vectorizer.fit_transform(df['message'])
 y = df['label']
 
-st.subheader("🧮 TF-IDF Feature Count")
+st.subheader("🧮 TF-IDF Features")
 st.write("Total Features Created:", X.shape[1])
 
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# -------------------------------
+# Train-Test Split
+# -------------------------------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
-# Function to train Lasso
-def train_lasso(alpha):
-    model = Lasso(alpha=alpha)
-    model.fit(X_train.toarray(), y_train)
-    return model
+# -------------------------------
+# Lasso Feature Selection Function
+# -------------------------------
+def lasso_feature_selection(alpha):
+    lasso = Lasso(alpha=alpha)
+    lasso.fit(X_train.toarray(), y_train)
 
-# Train models with different alpha
+    coef = lasso.coef_
+    selected = coef != 0
+
+    non_zero = np.sum(selected)
+    zero = np.sum(coef == 0)
+
+    return selected, non_zero, zero
+
+# -------------------------------
+# Compare Different Alpha Values
+# -------------------------------
+st.subheader("📉 Feature Selection using Lasso")
+
 alphas = [0.01, 0.1, 1]
 results = {}
 
 for alpha in alphas:
-    model = train_lasso(alpha)
-    coef = model.coef_
+    selected, non_zero, zero = lasso_feature_selection(alpha)
+    results[alpha] = (selected, non_zero, zero)
 
-    non_zero = np.sum(coef != 0)
-    zero = np.sum(coef == 0)
-
-    results[alpha] = (non_zero, zero)
-
-# Display results
-st.subheader("📉 Feature Selection using Lasso")
-
-for alpha in alphas:
     st.write(f"Alpha = {alpha}")
-    st.write(f"Non-zero features: {results[alpha][0]}")
-    st.write(f"Eliminated features: {results[alpha][1]}")
+    st.write(f"Selected Features: {non_zero}")
+    st.write(f"Eliminated Features: {zero}")
     st.write("---")
 
-# Percentage reduction (alpha=0.1)
+# -------------------------------
+# Feature Reduction %
+# -------------------------------
 original_features = X.shape[1]
-selected_features = results[0.1][0]
+selected_features = results[0.1][1]
 
 reduction = ((original_features - selected_features) / original_features) * 100
 
-st.subheader("📉 Feature Reduction")
+st.subheader("📉 Feature Reduction (alpha = 0.1)")
 st.write(f"Percentage Reduction: {reduction:.2f}%")
 
-# Prediction on test data
-model = train_lasso(0.1)
-y_pred = model.predict(X_test.toarray())
-y_pred = np.where(y_pred > 0.5, 1, 0)
+# -------------------------------
+# Use Best Alpha (0.01 for better accuracy)
+# -------------------------------
+selected_features_mask = results[0.01][0]
+
+X_train_selected = X_train[:, selected_features_mask]
+X_test_selected = X_test[:, selected_features_mask]
+
+# -------------------------------
+# Logistic Regression Model
+# -------------------------------
+model = LogisticRegression()
+model.fit(X_train_selected, y_train)
+
+# -------------------------------
+# Prediction on Test Data
+# -------------------------------
+y_pred = model.predict(X_test_selected)
 
 accuracy = accuracy_score(y_test, y_pred)
 
 st.subheader("🎯 Model Accuracy")
 st.write(f"Accuracy: {accuracy:.2f}")
 
+# -------------------------------
+# Confusion Matrix
+# -------------------------------
+st.subheader("📊 Confusion Matrix")
+cm = confusion_matrix(y_test, y_pred)
+st.write(cm)
+
+# -------------------------------
+# Top Important Features
+# -------------------------------
+st.subheader("🔥 Top Important Words")
+
+feature_names = vectorizer.get_feature_names_out()
+selected_feature_names = feature_names[selected_features_mask]
+
+coefficients = model.coef_[0]
+
+top_indices = np.argsort(np.abs(coefficients))[-10:]
+
+top_words = [(selected_feature_names[i], coefficients[i]) for i in top_indices]
+
+st.write(top_words)
+
+# -------------------------------
 # User Input Prediction
+# -------------------------------
 st.subheader("✉️ Predict Your Own Message")
 
 user_input = st.text_area("Enter SMS message:")
@@ -103,8 +166,11 @@ user_input = st.text_area("Enter SMS message:")
 if st.button("Predict"):
     if user_input:
         user_vec = vectorizer.transform([user_input])
-        pred = model.predict(user_vec.toarray())
-        pred_label = "Spam" if pred[0] > 0.5 else "Ham"
-        st.success(f"Prediction: {pred_label}")
+        user_vec_selected = user_vec[:, selected_features_mask]
+
+        pred = model.predict(user_vec_selected)[0]
+        label = "Spam" if pred == 1 else "Ham"
+
+        st.success(f"Prediction: {label}")
     else:
         st.warning("Please enter a message!")
