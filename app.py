@@ -170,11 +170,24 @@ if st.button("Predict"):
         prob = model.predict_proba(user_vec)[0][1]
 
         if prob > 0.4:
-            label = "Spam❗"
+            label = "Spam"
         else:
             label = "Ham"
 
-        st.success(f"Prediction: {label}")
-        st.write(f"Spam Probability: {prob:.2f}")
+        # 🎨 Colored Output
+        if label == "Spam":
+            st.markdown(
+                f"<div style='background-color:#ff4d4d;padding:15px;border-radius:10px;color:white;font-size:18px;'>"
+                f"🚨 Prediction: SPAM<br>Probability: {prob:.2f}"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f"<div style='background-color:#4CAF50;padding:15px;border-radius:10px;color:white;font-size:18px;'>"
+                f"✅ Prediction: HAM (Not Spam)<br>Probability: {prob:.2f}"
+                f"</div>",
+                unsafe_allow_html=True
+            )
     else:
         st.warning("Please enter a message!")
