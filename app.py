@@ -153,8 +153,6 @@ top_indices = np.argsort(np.abs(coefficients))[-10:]
 
 top_words = [(feature_names[i], coefficients[i]) for i in top_indices]
 
-st.write(top_words)
-
 # -------------------------------
 # User Input Prediction
 # -------------------------------
