@@ -52,7 +52,7 @@ df['label'] = le.fit_transform(df['label'])  # ham=0, spam=1
 # -------------------------------
 # TF-IDF Vectorization
 # -------------------------------
-vectorizer = TfidfVectorizer(stop_words='english')
+vectorizer = TfidfVectorizer(stop_words='english', max_features=3000)
 X = vectorizer.fit_transform(df['message'])
 y = df['label']
 
@@ -82,11 +82,11 @@ def lasso_feature_selection(alpha):
     return selected, non_zero, zero
 
 # -------------------------------
-# Compare Different Alpha Values
+# Compare Alpha Values
 # -------------------------------
 st.subheader("📉 Feature Selection using Lasso")
 
-alphas = [0.01, 0.1, 1]
+alphas = [0.0001, 0.001, 0.01]
 results = {}
 
 for alpha in alphas:
@@ -102,25 +102,33 @@ for alpha in alphas:
 # Feature Reduction %
 # -------------------------------
 original_features = X.shape[1]
-selected_features = results[0.1][1]
+selected_features = results[0.0001][1]
 
 reduction = ((original_features - selected_features) / original_features) * 100
 
-st.subheader("📉 Feature Reduction (alpha = 0.1)")
+st.subheader("📉 Feature Reduction (alpha = 0.0001)")
 st.write(f"Percentage Reduction: {reduction:.2f}%")
 
 # -------------------------------
-# Use Best Alpha (0.01 for better accuracy)
+# Select Best Features
 # -------------------------------
-selected_features_mask = results[0.01][0]
+selected_features_mask = results[0.0001][0]
 
-X_train_selected = X_train[:, selected_features_mask]
-X_test_selected = X_test[:, selected_features_mask]
+# ✅ SAFETY CHECK
+if np.sum(selected_features_mask) == 0:
+    st.error("⚠️ All features removed by Lasso! Using original features instead.")
+    X_train_selected = X_train
+    X_test_selected = X_test
+    selected_feature_names = vectorizer.get_feature_names_out()
+else:
+    X_train_selected = X_train[:, selected_features_mask]
+    X_test_selected = X_test[:, selected_features_mask]
+    selected_feature_names = vectorizer.get_feature_names_out()[selected_features_mask]
 
 # -------------------------------
 # Logistic Regression Model
 # -------------------------------
-model = LogisticRegression()
+model = LogisticRegression(max_iter=1000)
 model.fit(X_train_selected, y_train)
 
 # -------------------------------
@@ -141,12 +149,9 @@ cm = confusion_matrix(y_test, y_pred)
 st.write(cm)
 
 # -------------------------------
-# Top Important Features
+# Top Important Words
 # -------------------------------
 st.subheader("🔥 Top Important Words")
-
-feature_names = vectorizer.get_feature_names_out()
-selected_feature_names = feature_names[selected_features_mask]
 
 coefficients = model.coef_[0]
 
@@ -166,10 +171,14 @@ user_input = st.text_area("Enter SMS message:")
 if st.button("Predict"):
     if user_input:
         user_vec = vectorizer.transform([user_input])
-        user_vec_selected = user_vec[:, selected_features_mask]
+
+        if np.sum(selected_features_mask) == 0:
+            user_vec_selected = user_vec
+        else:
+            user_vec_selected = user_vec[:, selected_features_mask]
 
         pred = model.predict(user_vec_selected)[0]
-        label = "Spam" if pred == 1 else "Ham"
+        label = "Spam" if pred == 1 else "Ham (Not Spam)"
 
         st.success(f"Prediction: {label}")
     else:
