@@ -50,9 +50,14 @@ le = LabelEncoder()
 df['label'] = le.fit_transform(df['label'])  # ham=0, spam=1
 
 # -------------------------------
-# TF-IDF Vectorization
+# TF-IDF Vectorization (Improved)
 # -------------------------------
-vectorizer = TfidfVectorizer(stop_words='english', max_features=3000)
+vectorizer = TfidfVectorizer(
+    stop_words='english',
+    max_features=5000,
+    ngram_range=(1, 2)   # 🔥 important improvement
+)
+
 X = vectorizer.fit_transform(df['message'])
 y = df['label']
 
@@ -67,7 +72,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # -------------------------------
-# Lasso Feature Selection Function
+# Lasso Feature Selection (for report)
 # -------------------------------
 def lasso_feature_selection(alpha):
     lasso = Lasso(alpha=alpha)
@@ -110,31 +115,19 @@ st.subheader("📉 Feature Reduction (alpha = 0.0001)")
 st.write(f"Percentage Reduction: {reduction:.2f}%")
 
 # -------------------------------
-# Select Best Features
+# FINAL MODEL (No Lasso for prediction)
 # -------------------------------
-selected_features_mask = results[0.0001][0]
+model = LogisticRegression(
+    max_iter=1000,
+    class_weight='balanced'   # 🔥 handles imbalance
+)
 
-# ✅ SAFETY CHECK
-if np.sum(selected_features_mask) == 0:
-    st.error("⚠️ All features removed by Lasso! Using original features instead.")
-    X_train_selected = X_train
-    X_test_selected = X_test
-    selected_feature_names = vectorizer.get_feature_names_out()
-else:
-    X_train_selected = X_train[:, selected_features_mask]
-    X_test_selected = X_test[:, selected_features_mask]
-    selected_feature_names = vectorizer.get_feature_names_out()[selected_features_mask]
-
-# -------------------------------
-# Logistic Regression Model
-# -------------------------------
-model = LogisticRegression(max_iter=1000)
-model.fit(X_train_selected, y_train)
+model.fit(X_train, y_train)
 
 # -------------------------------
 # Prediction on Test Data
 # -------------------------------
-y_pred = model.predict(X_test_selected)
+y_pred = model.predict(X_test)
 
 accuracy = accuracy_score(y_test, y_pred)
 
@@ -153,11 +146,12 @@ st.write(cm)
 # -------------------------------
 st.subheader("🔥 Top Important Words")
 
+feature_names = vectorizer.get_feature_names_out()
 coefficients = model.coef_[0]
 
 top_indices = np.argsort(np.abs(coefficients))[-10:]
 
-top_words = [(selected_feature_names[i], coefficients[i]) for i in top_indices]
+top_words = [(feature_names[i], coefficients[i]) for i in top_indices]
 
 st.write(top_words)
 
@@ -172,14 +166,15 @@ if st.button("Predict"):
     if user_input:
         user_vec = vectorizer.transform([user_input])
 
-        if np.sum(selected_features_mask) == 0:
-            user_vec_selected = user_vec
-        else:
-            user_vec_selected = user_vec[:, selected_features_mask]
+        # Probability-based prediction
+        prob = model.predict_proba(user_vec)[0][1]
 
-        pred = model.predict(user_vec_selected)[0]
-        label = "Spam" if pred == 1 else "Ham (Not Spam)"
+        if prob > 0.4:
+            label = "Spam❗"
+        else:
+            label = "Ham"
 
         st.success(f"Prediction: {label}")
+        st.write(f"Spam Probability: {prob:.2f}")
     else:
         st.warning("Please enter a message!")
